@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>IFS | Event Poll</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-primary: #050508;
+      --bg-secondary: #0a0a12;
+      --surface: rgba(255, 255, 255, 0.03);
+      --surface-hover: rgba(255, 255, 255, 0.06);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-active: rgba(255, 255, 255, 0.2);
+      --text-primary: #f0f0f5;
+      --text-secondary: rgba(255, 255, 255, 0.55);
+      --text-tertiary: rgba(255, 255, 255, 0.35);
+      --accent: #4a7cff;
+      --accent-glow: rgba(74, 124, 255, 0.3);
+      --silver: #c0c5d0;
+      --gold: #d4af37;
+      --glass: rgba(255, 255, 255, 0.04);
+      --glass-border: rgba(255, 255, 255, 0.1);
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* === AMBIENT BACKGROUND === */
+    .ambient-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .ambient-bg::before {
+      content: '';
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(74, 124, 255, 0.08) 0%, transparent 70%);
+      top: -200px;
+      right: -200px;
+      animation: ambientFloat1 20s ease-in-out infinite;
+    }
+
+    .ambient-bg::after {
+      content: '';
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(74, 124, 255, 0.05) 0%, transparent 70%);
+      bottom: -150px;
+      left: -150px;
+      animation: ambientFloat2 25s ease-in-out infinite;
+    }
+
+    .ambient-line {
+      position: absolute;
+      width: 1px;
+      height: 100%;
+      background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.03), transparent);
+    }
+
+    .ambient-line:nth-child(1) { left: 20%; animation: linePulse 8s ease-in-out infinite; }
+    .ambient-line:nth-child(2) { left: 50%; animation: linePulse 12s ease-in-out infinite 2s; }
+    .ambient-line:nth-child(3) { left: 80%; animation: linePulse 10s ease-in-out infinite 4s; }
+
+    /* Particle field */
+    .particles {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    .particle {
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 50%;
+      animation: particleFloat linear infinite;
+    }
+
+    @keyframes particleFloat {
+      0% { transform: translateY(100vh) translateX(0); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateY(-10vh) translateX(30px); opacity: 0; }
+    }
+
+    @keyframes ambientFloat1 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33% { transform: translate(-50px, 30px) scale(1.1); }
+      66% { transform: translate(30px, -20px) scale(0.95); }
+    }
+
+    @keyframes ambientFloat2 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(40px, -40px) scale(1.1); }
+    }
+
+    @keyframes linePulse {
+      0%, 100% { opacity: 0; }
+      50% { opacity: 1; }
+    }
+
+    /* === APP CONTAINER === */
+    .app {
+      position: relative;
+      z-index: 1;
+      height: 100vh;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* === HEADER === */
+    .header {
+      padding: 24px 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: 6px;
+      color: var(--text-primary);
+      text-transform: uppercase;
+    }
+
+    .logo span {
+      color: var(--accent);
+    }
+
+    .header-badge {
+      font-size: 10px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+    }
+
+    /* === PROGRESS BAR === */
+    .progress-container {
+      flex-shrink: 0;
+      padding-bottom: 20px;
+    }
+
+    .progress-bar {
+      height: 2px;
+      background: var(--border);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #7ba4ff);
+      border-radius: 1px;
+      transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .progress-label {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+    }
+
+    /* === SCREEN CONTAINER === */
+    .screen-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+
+    .screen-container::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* === SCREENS === */
+    .screen {
+      display: none;
+      opacity: 0;
+      transform: translateY(30px);
+      min-height: 100%;
+      padding-bottom: 120px;
+    }
+
+    .screen.active {
+      display: block;
+      animation: screenIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .screen.exiting {
+      animation: screenOut 0.4s cubic-bezier(0.7, 0, 0.84, 0) forwards;
+    }
+
+    @keyframes screenIn {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes screenOut {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(-20px); }
+    }
+
+    /* === WELCOME SCREEN === */
+    .welcome-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 70vh;
+      text-align: center;
+    }
+
+    .welcome-eyebrow {
+      font-size: 11px;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      margin-bottom: 24px;
+      animation: fadeUp 1s ease 0.3s both;
+    }
+
+    .welcome-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 42px;
+      font-weight: 400;
+      line-height: 1.15;
+      letter-spacing: -0.5px;
+      margin-bottom: 16px;
+      animation: fadeUp 1s ease 0.5s both;
+    }
+
+    .welcome-title em {
+      font-style: italic;
+      color: var(--silver);
+    }
+
+    .welcome-subtitle {
+      font-size: 15px;
+      font-weight: 300;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 320px;
+      margin-bottom: 48px;
+      animation: fadeUp 1s ease 0.7s both;
+    }
+
+    .welcome-divider {
+      width: 40px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-active), transparent);
+      margin-bottom: 48px;
+      animation: fadeUp 1s ease 0.6s both;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* === SECTION HEADERS === */
+    .section-eyebrow {
+      font-size: 10px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 28px;
+      font-weight: 400;
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+
+    .section-subtitle {
+      font-size: 14px;
+      color: var(--text-secondary);
+      font-weight: 300;
+      margin-bottom: 36px;
+    }
+
+    /* === FORM ELEMENTS === */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      margin-bottom: 8px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 16px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-family: 'Inter', sans-serif;
+      font-size: 15px;
+      font-weight: 300;
+      transition: all 0.3s ease;
+      outline: none;
+    }
+
+    .form-input::placeholder {
+      color: var(--text-tertiary);
+    }
+
+    .form-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow), 0 8px 32px rgba(0,0,0,0.3);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .form-select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='rgba(255,255,255,0.4)' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 16px center;
+      padding-right: 44px;
+    }
+
+    .form-select option {
+      background: #1a1a2e;
+      color: var(--text-primary);
+    }
+
+    /* === POLL OPTIONS === */
+    .poll-question-number {
+      font-size: 12px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+      font-weight: 500;
+    }
+
+    .poll-question-text {
+      font-family: 'Playfair Display', serif;
+      font-size: 24px;
+      font-weight: 400;
+      line-height: 1.3;
+      margin-bottom: 32px;
+    }
+
+    .poll-options {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .poll-option {
+      position: relative;
+      padding: 20px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+
+    .poll-option::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(74, 124, 255, 0.1), transparent);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+    }
+
+    .poll-option:hover {
+      border-color: rgba(255, 255, 255, 0.15);
+      background: var(--surface-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .poll-option.selected {
+      border-color: var(--accent);
+      background: rgba(74, 124, 255, 0.08);
+      box-shadow: 0 0 0 3px var(--accent-glow), 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    .poll-option.selected::before {
+      opacity: 1;
+    }
+
+    .poll-option-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .poll-option-radio {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid var(--border-active);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+
+    .poll-option.selected .poll-option-radio {
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+
+    .poll-option.selected .poll-option-radio::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: white;
+    }
+
+    .poll-option-text {
+      font-size: 15px;
+      font-weight: 400;
+      line-height: 1.4;
+    }
+
+    .poll-option-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 300;
+      margin-top: 4px;
+    }
+
+    /* === SLIDER INPUT === */
+    .slider-container {
+      padding: 20px 0;
+    }
+
+    .slider-value {
+      text-align: center;
+      font-family: 'Playfair Display', serif;
+      font-size: 48px;
+      font-weight: 400;
+      color: var(--accent);
+      margin-bottom: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .slider-value-label {
+      text-align: center;
+      font-size: 12px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      margin-bottom: 24px;
+    }
+
+    .slider-input {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    .slider-input::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 20px var(--accent-glow);
+      transition: transform 0.2s ease;
+    }
+
+    .slider-input::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 12px;
+      font-size: 11px;
+      color: var(--text-tertiary);
+      letter-spacing: 1px;
+    }
+
+    /* === BUTTONS === */
+    .btn-primary {
+      width: 100%;
+      padding: 18px 32px;
+      background: linear-gradient(135deg, var(--accent), #3a6aee);
+      color: white;
+      border: none;
+      border-radius: 14px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.2), transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 40px rgba(74, 124, 255, 0.4);
+    }
+
+    .btn-primary:hover::before {
+      opacity: 1;
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .btn-secondary {
+      width: 100%;
+      padding: 18px 32px;
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--border-active);
+      color: var(--text-primary);
+    }
+
+    /* === FIXED FOOTER === */
+    .footer-actions {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      padding: 16px 24px calc(env(safe-area-inset-bottom, 16px) + 16px);
+      background: linear-gradient(to top, var(--bg-primary) 60%, transparent);
+    }
+
+    .footer-inner {
+      max-width: 480px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* === COMPLETION SCREEN === */
+    .completion-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 70vh;
+      text-align: center;
+    }
+
+    .completion-icon {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: rgba(74, 124, 255, 0.1);
+      border: 1px solid rgba(74, 124, 255, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 32px;
+      animation: pulseGlow 3s ease-in-out infinite;
+    }
+
+    .completion-icon svg {
+      width: 32px;
+      height: 32px;
+      stroke: var(--accent);
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 20px rgba(74, 124, 255, 0.1); }
+      50% { box-shadow: 0 0 40px rgba(74, 124, 255, 0.3); }
+    }
+
+    .completion-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 36px;
+      font-weight: 400;
+      margin-bottom: 12px;
+    }
+
+    .completion-message {
+      font-size: 15px;
+      font-weight: 300;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      max-width: 300px;
+    }
+
+    .completion-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      width: 100%;
+      margin-top: 48px;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-family: 'Playfair Display', serif;
+      font-size: 28px;
+      color: var(--accent);
+      margin-bottom: 4px;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+    }
+
+    /* === RIPPLE EFFECT === */
+    .ripple {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1);
+      transform: scale(0);
+      animation: rippleAnim 0.6s ease-out;
+      pointer-events: none;
+    }
+
+    @keyframes rippleAnim {
+      to { transform: scale(4); opacity: 0; }
+    }
+
+    /* === STAGGER ANIMATIONS === */
+    .stagger > * {
+      opacity: 0;
+      transform: translateY(15px);
+      animation: staggerIn 0.5s ease forwards;
+    }
+
+    .stagger > *:nth-child(1) { animation-delay: 0.05s; }
+    .stagger > *:nth-child(2) { animation-delay: 0.1s; }
+    .stagger > *:nth-child(3) { animation-delay: 0.15s; }
+    .stagger > *:nth-child(4) { animation-delay: 0.2s; }
+    .stagger > *:nth-child(5) { animation-delay: 0.25s; }
+    .stagger > *:nth-child(6) { animation-delay: 0.3s; }
+    .stagger > *:nth-child(7) { animation-delay: 0.35s; }
+    .stagger > *:nth-child(8) { animation-delay: 0.4s; }
+
+    @keyframes staggerIn {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* === MOBILE OPTIMIZATIONS === */
+    @media (max-height: 700px) {
+      .welcome-title { font-size: 34px; }
+      .poll-question-text { font-size: 22px; }
+      .section-title { font-size: 24px; }
+    }
+
+    @media (min-width: 768px) {
+      .app { padding: 0 40px; }
+    }
+
+    /* Smooth scroll behavior */
+    .screen-container {
+      scroll-behavior: smooth;
+    }
+
+    /* Loading shimmer */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    .shimmer-text {
+      background: linear-gradient(90deg, var(--text-primary) 0%, var(--accent) 50%, var(--text-primary) 100%);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 3s linear infinite;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient Background -->
+  <div class="ambient-bg">
+    <div class="ambient-line"></div>
+    <div class="ambient-line"></div>
+    <div class="ambient-line"></div>
+    <div class="particles" id="particles"></div>
+  </div>
+
+  <!-- App -->
+  <div class="app">
+
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">IFS</div>
+      <div class="header-badge">Live Poll</div>
+    </header>
+
+    <!-- Progress -->
+    <div class="progress-container" id="progressContainer" style="display: none;">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+      </div>
+      <div class="progress-label">
+        <span id="progressSection">Profile</span>
+        <span id="progressStep">1 / 8</span>
+      </div>
+    </div>
+
+    <!-- Screen Container -->
+    <div class="screen-container">
+
+      <!-- SCREEN: Welcome -->
+      <div class="screen active" id="screen-welcome">
+        <div class="welcome-content">
+          <div class="welcome-eyebrow">Welcome to the</div>
+          <h1 class="welcome-title">IFS <em>Experience</em><br>Survey</h1>
+          <div class="welcome-divider"></div>
+          <p class="welcome-subtitle">Share your perspective and help shape the future of enterprise innovation.</p>
+        </div>
+      </div>
+
+      <!-- SCREEN: Profile -->
+      <div class="screen" id="screen-profile">
+        <div class="stagger">
+          <div class="section-eyebrow">About You</div>
+          <h2 class="section-title">Your Profile</h2>
+          <p class="section-subtitle">Tell us a bit about yourself.</p>
+
+          <div class="form-group">
+            <label class="form-label">Full Name</label>
+            <input type="text" class="form-input" id="profileName" placeholder="Enter your name" autocomplete="name">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Company</label>
+            <input type="text" class="form-input" id="profileCompany" placeholder="Your organization" autocomplete="organization">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Role</label>
+            <select class="form-input form-select" id="profileRole">
+              <option value="" disabled selected>Select your role</option>
+              <option value="c-suite">C-Suite / Executive</option>
+              <option value="vp">VP / Director</option>
+              <option value="manager">Manager</option>
+              <option value="individual">Individual Contributor</option>
+              <option value="consultant">Consultant / Advisor</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Industry</label>
+            <select class="form-input form-select" id="profileIndustry">
+              <option value="" disabled selected>Select your industry</option>
+              <option value="manufacturing">Manufacturing</option>
+              <option value="energy">Energy & Utilities</option>
+              <option value="aerospace">Aerospace & Defense</option>
+              <option value="construction">Construction & Engineering</option>
+              <option value="telecom">Telecommunications</option>
+              <option value="healthcare">Healthcare</option>
+              <option value="public">Public Sector</option>
+              <option value="services">Professional Services</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN: Poll Q1 -->
+      <div class="screen" id="screen-q1">
+        <div class="stagger">
+          <div class="poll-question-number">Question 01</div>
+          <h2 class="poll-question-text">What is the biggest driver of digital transformation in your organization?</h2>
+          <div class="poll-options" data-question="q1">
+            <div class="poll-option" data-value="efficiency">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Operational Efficiency</div>
+                  <div class="poll-option-desc">Streamlining processes & reducing costs</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="cx">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Customer Experience</div>
+                  <div class="poll-option-desc">Improving satisfaction & engagement</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="innovation">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Innovation & Growth</div>
+                  <div class="poll-option-desc">New revenue streams & markets</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="sustainability">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Sustainability Goals</div>
+                  <div class="poll-option-desc">Environmental & ESG commitments</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN: Poll Q2 -->
+      <div class="screen" id="screen-q2">
+        <div class="stagger">
+          <div class="poll-question-number">Question 02</div>
+          <h2 class="poll-question-text">How mature is your organization's AI adoption?</h2>
+          <div class="poll-options" data-question="q2">
+            <div class="poll-option" data-value="exploring">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Exploring</div>
+                  <div class="poll-option-desc">Researching possibilities, no implementation yet</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="piloting">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Piloting</div>
+                  <div class="poll-option-desc">Running proofs of concept in select areas</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="scaling">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Scaling</div>
+                  <div class="poll-option-desc">Expanding successful AI across the business</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="embedded">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Fully Embedded</div>
+                  <div class="poll-option-desc">AI is core to our operations & strategy</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN: Poll Q3 -->
+      <div class="screen" id="screen-q3">
+        <div class="stagger">
+          <div class="poll-question-number">Question 03</div>
+          <h2 class="poll-question-text">Which area would benefit most from intelligent automation?</h2>
+          <div class="poll-options" data-question="q3">
+            <div class="poll-option" data-value="supply-chain">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Supply Chain</div>
+                  <div class="poll-option-desc">Forecasting, logistics & procurement</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="field-service">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Field Service</div>
+                  <div class="poll-option-desc">Scheduling, dispatch & asset management</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="finance">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Finance & Accounting</div>
+                  <div class="poll-option-desc">Reporting, compliance & invoicing</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="hr">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">HR & Talent</div>
+                  <div class="poll-option-desc">Workforce planning & employee experience</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN: Poll Q4 (Slider) -->
+      <div class="screen" id="screen-q4">
+        <div class="stagger">
+          <div class="poll-question-number">Question 04</div>
+          <h2 class="poll-question-text">On a scale of 1-10, how confident are you in your data strategy?</h2>
+          <div class="slider-container">
+            <div class="slider-value" id="sliderValue">5</div>
+            <div class="slider-value-label">Confidence Level</div>
+            <input type="range" class="slider-input" id="sliderInput" min="1" max="10" value="5" step="1">
+            <div class="slider-labels">
+              <span>Not confident</span>
+              <span>Very confident</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN: Poll Q5 -->
+      <div class="screen" id="screen-q5">
+        <div class="stagger">
+          <div class="poll-question-number">Question 05</div>
+          <h2 class="poll-question-text">What excites you most about the future of enterprise technology?</h2>
+          <div class="poll-options" data-question="q5">
+            <div class="poll-option" data-value="ai-copilots">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">AI Copilots & Assistants</div>
+                  <div class="poll-option-desc">Intelligent agents augmenting every role</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="composable">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Composable Architecture</div>
+                  <div class="poll-option-desc">Modular, flexible technology ecosystems</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="sustainability-tech">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Sustainability Tech</div>
+                  <div class="poll-option-desc">Carbon tracking, circular economy tools</div>
+                </div>
+              </div>
+            </div>
+            <div class="poll-option" data-value="predictive">
+              <div class="poll-option-content">
+                <div class="poll-option-radio"></div>
+                <div>
+                  <div class="poll-option-text">Predictive Everything</div>
+                  <div class="poll-option-desc">Anticipating needs before they arise</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SCREEN: Completion -->
+      <div class="screen" id="screen-complete">
+        <div class="completion-content">
+          <div class="completion-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          </div>
+          <h2 class="completion-title shimmer-text">Thank You</h2>
+          <p class="completion-message">Your insights are invaluable. Together, we're shaping the future of enterprise innovation.</p>
+          <div class="completion-stats">
+            <div class="stat-card">
+              <div class="stat-value" id="statResponses">--</div>
+              <div class="stat-label">Responses</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="statQuestions">8</div>
+              <div class="stat-label">Answered</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Fixed Footer -->
+  <div class="footer-actions">
+    <div class="footer-inner">
+      <button class="btn-primary" id="btnNext">Begin</button>
+    </div>
+  </div>
+
+  <script>
+    // ========================================
+    // IFS Event Polling App - Core Logic
+    // ========================================
+
+    const APP = {
+      currentScreen: 0,
+      screens: [
+        'screen-welcome',
+        'screen-profile',
+        'screen-q1',
+        'screen-q2',
+        'screen-q3',
+        'screen-q4',
+        'screen-q5',
+        'screen-complete'
+      ],
+      answers: {},
+      totalSteps: 8, // profile + 5 questions + welcome + complete (progress only for middle 6)
+      responseCount: Math.floor(Math.random() * 200) + 340
+    };
+
+    // Elements
+    const btnNext = document.getElementById('btnNext');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressFill = document.getElementById('progressFill');
+    const progressSection = document.getElementById('progressSection');
+    const progressStep = document.getElementById('progressStep');
+
+    // ========================================
+    // PARTICLES
+    // ========================================
+    function createParticles() {
+      const container = document.getElementById('particles');
+      for (let i = 0; i < 30; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        particle.style.left = Math.random() * 100 + '%';
+        particle.style.animationDuration = (Math.random() * 15 + 10) + 's';
+        particle.style.animationDelay = (Math.random() * 15) + 's';
+        particle.style.width = particle.style.height = (Math.random() * 2 + 1) + 'px';
+        container.appendChild(particle);
+      }
+    }
+    createParticles();
+
+    // ========================================
+    // NAVIGATION
+    // ========================================
+    function navigateTo(index) {
+      if (index < 0 || index >= APP.screens.length) return;
+
+      const currentEl = document.getElementById(APP.screens[APP.currentScreen]);
+      const nextEl = document.getElementById(APP.screens[index]);
+
+      // Exit current
+      currentEl.classList.add('exiting');
+      currentEl.classList.remove('active');
+
+      setTimeout(() => {
+        currentEl.classList.remove('exiting');
+        currentEl.style.display = 'none';
+
+        // Enter next
+        nextEl.style.display = 'block';
+        nextEl.classList.add('active');
+
+        // Scroll to top
+        document.querySelector('.screen-container').scrollTop = 0;
+
+        APP.currentScreen = index;
+        updateUI();
+      }, 350);
+    }
+
+    function updateUI() {
+      const idx = APP.currentScreen;
+      const screenId = APP.screens[idx];
+
+      // Progress bar
+      if (idx === 0 || idx === APP.screens.length - 1) {
+        progressContainer.style.display = 'none';
+      } else {
+        progressContainer.style.display = 'block';
+        const progress = (idx / (APP.screens.length - 2)) * 100;
+        progressFill.style.width = progress + '%';
+
+        if (idx === 1) {
+          progressSection.textContent = 'Profile';
+        } else {
+          progressSection.textContent = 'Poll';
+        }
+        progressStep.textContent = idx + ' / ' + (APP.screens.length - 2);
+      }
+
+      // Button text
+      if (idx === 0) {
+        btnNext.textContent = 'Begin';
+        btnNext.disabled = false;
+        btnNext.style.display = 'block';
+      } else if (idx === APP.screens.length - 1) {
+        btnNext.style.display = 'none';
+      } else if (idx === APP.screens.length - 2) {
+        btnNext.textContent = 'Submit';
+        updateNextButtonState();
+      } else {
+        btnNext.textContent = 'Continue';
+        updateNextButtonState();
+      }
+
+      // Show response count on completion
+      if (screenId === 'screen-complete') {
+        document.getElementById('statResponses').textContent = APP.responseCount;
+        btnNext.style.display = 'none';
+      }
+    }
+
+    function updateNextButtonState() {
+      const idx = APP.currentScreen;
+      const screenId = APP.screens[idx];
+
+      if (screenId === 'screen-profile') {
+        const name = document.getElementById('profileName').value.trim();
+        const company = document.getElementById('profileCompany').value.trim();
+        const role = document.getElementById('profileRole').value;
+        const industry = document.getElementById('profileIndustry').value;
+        btnNext.disabled = !(name && company && role && industry);
+      } else if (screenId === 'screen-q4') {
+        // Slider always has a value
+        btnNext.disabled = false;
+      } else if (screenId.startsWith('screen-q')) {
+        const qKey = screenId.replace('screen-', '');
+        btnNext.disabled = !APP.answers[qKey];
+      } else {
+        btnNext.disabled = false;
+      }
+    }
+
+    // ========================================
+    // EVENT HANDLERS
+    // ========================================
+
+    // Next button
+    btnNext.addEventListener('click', () => {
+      if (btnNext.disabled) return;
+
+      // Collect profile data before moving on
+      if (APP.screens[APP.currentScreen] === 'screen-profile') {
+        APP.answers.profile = {
+          name: document.getElementById('profileName').value.trim(),
+          company: document.getElementById('profileCompany').value.trim(),
+          role: document.getElementById('profileRole').value,
+          industry: document.getElementById('profileIndustry').value
+        };
+      }
+
+      // Collect slider value
+      if (APP.screens[APP.currentScreen] === 'screen-q4') {
+        APP.answers.q4 = document.getElementById('sliderInput').value;
+      }
+
+      // If submitting, log the data
+      if (APP.currentScreen === APP.screens.length - 2) {
+        console.log('Poll submission:', JSON.stringify(APP.answers, null, 2));
+        APP.responseCount++;
+      }
+
+      navigateTo(APP.currentScreen + 1);
+    });
+
+    // Poll option clicks
+    document.querySelectorAll('.poll-option').forEach(option => {
+      option.addEventListener('click', () => {
+        const parent = option.closest('.poll-options');
+        const question = parent.dataset.question;
+
+        // Deselect all in group
+        parent.querySelectorAll('.poll-option').forEach(o => o.classList.remove('selected'));
+
+        // Select this one
+        option.classList.add('selected');
+        APP.answers[question] = option.dataset.value;
+
+        // Add ripple
+        const ripple = document.createElement('span');
+        ripple.className = 'ripple';
+        ripple.style.left = '50%';
+        ripple.style.top = '50%';
+        option.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 600);
+
+        updateNextButtonState();
+      });
+    });
+
+    // Profile form inputs - update button state
+    ['profileName', 'profileCompany', 'profileRole', 'profileIndustry'].forEach(id => {
+      document.getElementById(id).addEventListener('input', updateNextButtonState);
+      document.getElementById(id).addEventListener('change', updateNextButtonState);
+    });
+
+    // Slider
+    const sliderInput = document.getElementById('sliderInput');
+    const sliderValue = document.getElementById('sliderValue');
+    sliderInput.addEventListener('input', () => {
+      sliderValue.textContent = sliderInput.value;
+      // Dynamic color intensity
+      const intensity = sliderInput.value / 10;
+      sliderValue.style.opacity = 0.5 + intensity * 0.5;
+    });
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !btnNext.disabled) {
+        btnNext.click();
+      }
+    });
+
+    // Initialize
+    updateUI();
+  </script>
+</body>
+</html>
